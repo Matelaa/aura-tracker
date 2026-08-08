@@ -1,5 +1,6 @@
 package com.aurafarming;
 
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.ScheduledExecutorService;
@@ -96,9 +97,14 @@ public class AuraPlugin extends Plugin
 	@Inject
 	private LocalAuraRepository repository;
 
+	@Inject
+	private AuraApiClient apiClient;
+
+	@Inject
+	private Gson gson;
+
 	private final GrandExchangeArea grandExchangeArea = new GrandExchangeArea();
 	private final AuraScoreCalculator scoreCalculator = new AuraScoreCalculator();
-	private final AuraApiClient apiClient = new AuraApiClient();
 
 	private AuraSessionTracker tracker;
 	private AuraPanel panel;
@@ -369,7 +375,7 @@ public class AuraPlugin extends Plugin
 			byte[] glb;
 			try
 			{
-				glb = GlbExporter.toBytes(client, model, "player");
+				glb = GlbExporter.toBytes(client, model, "player", gson);
 			}
 			catch (IOException | RuntimeException e)
 			{

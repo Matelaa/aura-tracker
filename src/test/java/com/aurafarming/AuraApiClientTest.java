@@ -1,5 +1,6 @@
 package com.aurafarming;
 
+import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -76,7 +77,7 @@ public class AuraApiClientTest
 	@Test
 	public void sendsExpectedRequestShape() throws InterruptedException
 	{
-		AuraApiClient client = new AuraApiClient(baseUrl());
+		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
 
 		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 752_400);
 		awaitRequest();
@@ -94,7 +95,7 @@ public class AuraApiClientTest
 		// Nothing is listening on this port (server from setUp() is a different one) —
 		// simulates the backend being down. Must not throw: a sync failure can never
 		// surface to the caller.
-		AuraApiClient client = new AuraApiClient("http://127.0.0.1:1");
+		AuraApiClient client = new AuraApiClient(new Gson(), "http://127.0.0.1:1");
 		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60);
 		// If we reach this line without an exception, the guarantee held.
 	}
@@ -103,7 +104,7 @@ public class AuraApiClientTest
 	public void neverThrowsWhenServerReturnsAnErrorStatus() throws InterruptedException
 	{
 		respondWithStatus = 429;
-		AuraApiClient client = new AuraApiClient(baseUrl());
+		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
 
 		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60);
 		awaitRequest();

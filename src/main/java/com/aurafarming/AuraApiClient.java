@@ -7,6 +7,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -21,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * scheduled sync simply tries again.
  */
 @Slf4j
+@Singleton
 public class AuraApiClient
 {
 	/**
@@ -35,19 +38,26 @@ public class AuraApiClient
 	private final Gson gson;
 	private final String baseUrl;
 
-	public AuraApiClient()
+	/**
+	 * Always takes RuneLite's own injected {@link Gson} instance rather than
+	 * constructing a fresh one — a plain {@code new Gson()} is a terminally deprecated
+	 * pattern the Plugin Hub packager rejects at build time (confirmed by an actual
+	 * failed submission, not just the docs).
+	 */
+	@Inject
+	public AuraApiClient(Gson gson)
 	{
-		this(PRODUCTION_BASE_URL);
+		this(gson, PRODUCTION_BASE_URL);
 	}
 
 	/**
 	 * Package-private constructor allowing tests to point at a local test server instead
 	 * of the real (or dev) backend.
 	 */
-	AuraApiClient(String baseUrl)
+	AuraApiClient(Gson gson, String baseUrl)
 	{
 		this.baseUrl = baseUrl;
-		this.gson = new Gson();
+		this.gson = gson;
 		this.httpClient = HttpClient.newBuilder()
 			.connectTimeout(REQUEST_TIMEOUT)
 			// HttpClient defaults to preferring HTTP/2 even over plain (non-TLS) HTTP,
