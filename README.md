@@ -12,6 +12,24 @@ you aren't actually standing still inside the GE.
 auraPoints = eligibleSecondsElapsed / 60
 ```
 
+## Screenshots
+
+<table>
+<tr>
+<td><img src="assets/panel.png" width="220" alt="Sidebar panel"/></td>
+<td><img src="assets/leaderboard.png" width="340" alt="Community leaderboard"/></td>
+<td><img src="assets/player-page.png" width="340" alt="Player page"/></td>
+</tr>
+<tr>
+<td align="center">Sidebar panel</td>
+<td align="center">Community leaderboard</td>
+<td align="center">Player page</td>
+</tr>
+</table>
+
+Leaderboard/player screenshots show synthetic demo data (`aura-back/scripts/seed.ts`),
+not a real player's account.
+
 ## Data and privacy
 
 **Local tracking is always on** and never leaves your machine — it's saved to
