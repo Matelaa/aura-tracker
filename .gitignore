@@ -1,0 +1,17 @@
+# Gradle
+.gradle/
+build/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local RuneLite runtime data — never part of the plugin itself, generated at
+# runtime on whatever machine the plugin runs on.
+sideloaded-plugins/

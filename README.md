@@ -1,0 +1,88 @@
+# Aura Tracker
+
+A fun RuneLite plugin for farming Aura — measured by how long you stand still, on the
+same tile, inside the Grand Exchange.
+
+The longer you stand still on the same tile inside the Grand Exchange, the more Aura
+you accumulate. Leaving the tile, leaving the GE, world hopping, teleporting, or
+logging out pause the count — nothing is lost, but nothing keeps accumulating while
+you aren't actually standing still inside the GE.
+
+```
+auraPoints = eligibleSecondsElapsed / 60
+```
+
+## Data and privacy
+
+**Local tracking is always on** and never leaves your machine — it's saved to
+`~/.runelite/aura-tracker/session.json`.
+
+**Online sync is on by default (opt-out)**, same model as [RuneProfile](https://runeprofile.com):
+your display name and Aura total sync to a community leaderboard when you log out. Your
+character's equipment/appearance can also be exported as a 3D model and shown on your
+player page — either via the panel's "Update 3D Model" button, or a single silent
+automatic upload the first time you log in with sync enabled. Both can be turned off
+any time in **Config → Aura Tracker**; a one-time chat message explains what's sent the
+first time a sync actually happens.
+
+This plugin never reads keyboard, mouse, other players, or anything beyond your own
+character's position and appearance.
+
+**The leaderboard is unofficial.** It's a fun community ranking, not a verified
+hiscore — Aura is calculated entirely by each player's own client, so it can be
+manipulated by a modified client. Treat it as bragging rights, not proof.
+
+## Structure
+
+```
+src/main/java/com/aurafarming/
+  AuraPlugin.java             # lifecycle, RuneLite events, wiring, online sync/model
+  AuraConfig.java             # user config — just onlineSyncEnabled (opt-out)
+  AuraSessionTracker.java     # the only class that decides when Aura accumulates
+  AuraState.java              # state machine enum
+  GrandExchangeArea.java      # defines "inside the GE" — testable, isolated
+  AuraTimingClock.java        # anti-drift/anti-freeze timing (nanoTime)
+  AuraScoreCalculator.java    # single source of the scoring formula
+  AuraSession.java            # persisted data (raw time, never the score, + deviceId)
+  AuraPanel.java              # sidebar, refreshes 1x/second, "update 3D model" button
+  LocalAuraRepository.java    # local JSON persistence — no network
+  AuraApiClient.java          # the ONLY class that makes network calls
+  modelexporter/              # adapted from the RuneProfile plugin (BSD-2-Clause) — see THIRD_PARTY_NOTICES.md
+    GlbExporter.java          #   orchestrates exporting a Model to .glb
+    ModelMeshBuilder.java     #   converts RuneLite's Model into a 3D mesh
+    GameTextures.java         #   extracts textures from the client as PNG
+    GlbWriter.java            #   serializes the mesh into binary glTF
+    JagexColor.java           #   decodes OSRS's HSL color format
+    MeshData.java             #   intermediate mesh representation, independent of client/format
+
+src/test/java/com/aurafarming/
+  GrandExchangeAreaTest.java
+  AuraScoreCalculatorTest.java
+  AuraTimingClockTest.java
+  AuraSessionTrackerTest.java
+  LocalAuraRepositoryTest.java
+  AuraApiClientTest.java      # a real local HTTP server as the test double
+```
+
+## Setup
+
+Java 11 (same version RuneLite core requires). This folder is a self-contained Gradle
+project — put it anywhere on disk, open it in IntelliJ IDEA as a Gradle project, or use
+the command line:
+
+```bash
+./gradlew build
+./gradlew test
+```
+
+Downloads `net.runelite:client` (`latest.release`) from `https://repo.runelite.net`, so
+it needs internet access.
+
+## Credits
+
+`com.aurafarming.modelexporter` is adapted from the [RuneProfile plugin](https://github.com/ReinhardtR/runeprofile-plugin)
+— see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full license text.
+
+## License
+
+BSD 2-Clause — see [LICENSE](LICENSE).
