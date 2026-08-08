@@ -20,10 +20,10 @@ auraPoints = eligibleSecondsElapsed / 60
 **Online sync is on by default (opt-out)**, same model as [RuneProfile](https://runeprofile.com):
 your display name and Aura total sync to a community leaderboard when you log out. Your
 character's equipment/appearance can also be exported as a 3D model and shown on your
-player page — either via the panel's "Update 3D Model" button, or a single silent
-automatic upload the first time you log in with sync enabled. Both can be turned off
-any time in **Config → Aura Tracker**; a one-time chat message explains what's sent the
-first time a sync actually happens.
+player page — but only when you click the panel's "Update 3D Model" button. Nothing
+about the model is ever exported automatically. Both sync and the model can be turned
+off any time in **Config → Aura Tracker**; a one-time chat message explains what's sent
+the first time a sync actually happens.
 
 This plugin never reads keyboard, mouse, other players, or anything beyond your own
 character's position and appearance.

@@ -75,22 +75,6 @@ public class AuraPlugin extends Plugin
 	 */
 	private static final String DISCLOSURE_SHOWN_KEY = "syncDisclosureShown";
 
-	/**
-	 * Hidden config key, same pattern as {@link #DISCLOSURE_SHOWN_KEY}: tracks whether
-	 * the automatic quiet model upload (see {@link #maybeScheduleInitialModelUpload()})
-	 * has already been attempted, so it only ever fires once per install regardless of
-	 * how many times the player logs in afterward — later updates are the user's own
-	 * choice via the panel button.
-	 */
-	private static final String INITIAL_MODEL_UPLOAD_DONE_KEY = "initialModelUploadDone";
-
-	/**
-	 * Matches RuneProfile's own delay for the same quiet initial upload — long enough
-	 * that the client has fully resolved the player's equipment/appearance after login,
-	 * short enough nobody notices the wait.
-	 */
-	private static final int INITIAL_MODEL_UPLOAD_DELAY_SECONDS = 5;
-
 	@Inject
 	private Client client;
 
@@ -177,14 +161,6 @@ public class AuraPlugin extends Plugin
 		{
 			startOnlineSync();
 		}
-
-		// Same bootstrap concern as the tracker state above: if the plugin starts while
-		// already logged in, no future LOGIN->LOGGED_IN transition will ever fire to
-		// trigger the quiet initial model upload otherwise.
-		if (client.getGameState() == GameState.LOGGED_IN)
-		{
-			maybeScheduleInitialModelUpload();
-		}
 	}
 
 	@Override
@@ -266,10 +242,6 @@ public class AuraPlugin extends Plugin
 			{
 				syncOnline();
 			}
-		}
-		else if (newState == GameState.LOGGED_IN)
-		{
-			maybeScheduleInitialModelUpload();
 		}
 	}
 
@@ -362,58 +334,19 @@ public class AuraPlugin extends Plugin
 	}
 
 	/**
-	 * Schedules the one-time, silent initial model upload — mirrors RuneProfile's own
-	 * behavior (a quiet {@code updateModelAsync(true)} ~5s after profile creation), so a
-	 * brand-new install's leaderboard avatar isn't left empty until the player thinks to
-	 * click the manual button. Only ever attempted once per install: the "done" flag is
-	 * set the moment the attempt is scheduled, not on success — a failed quiet attempt
-	 * (e.g. sync got disabled again before the delay elapsed) is never retried
-	 * automatically, exactly like {@link #showSyncDisclosureOnce()}'s flag. The player
-	 * can always still use the manual button regardless of this flag's state.
-	 */
-	private void maybeScheduleInitialModelUpload()
-	{
-		if (!config.onlineSyncEnabled())
-		{
-			return;
-		}
-		if ("true".equals(configManager.getConfiguration("aurafarming", INITIAL_MODEL_UPLOAD_DONE_KEY)))
-		{
-			return;
-		}
-		configManager.setConfiguration("aurafarming", INITIAL_MODEL_UPLOAD_DONE_KEY, true);
-		executor.schedule(() -> updateModelAsync(true), INITIAL_MODEL_UPLOAD_DELAY_SECONDS, TimeUnit.SECONDS);
-	}
-
-	/**
 	 * Exports and uploads the player's current 3D model (equipment, colors, textures)
-	 * for the profile page's model viewer — see {@link GlbExporter}. Runs entirely on
-	 * the client thread via {@link ClientThread}, so {@code getLocalPlayer()}/
-	 * {@code getModel()} are always safe to read fresh here — unlike the
-	 * logout-triggered JSON sync, both callers of this method (the manual button,
-	 * {@link #maybeScheduleInitialModelUpload()}) only ever run while the player is
-	 * actively in-game and resolvable.
+	 * for the profile page's model viewer — see {@link GlbExporter}. The only trigger is
+	 * the panel's "Update 3D Model" button — deliberately never automatic, so exporting
+	 * the character's appearance is always a decision the player actively makes. Runs
+	 * entirely on the client thread via {@link ClientThread}, so
+	 * {@code getLocalPlayer()}/{@code getModel()} are always safe to read fresh here.
 	 */
 	private void updateModelAsync()
 	{
-		updateModelAsync(false);
-	}
-
-	/**
-	 * @param quiet true for the automatic initial upload (no chat messages at all,
-	 *              failures only logged); false for the manual panel-button click
-	 *              (RuneProfile's own UX for the equivalent action — user pressed a
-	 *              button, so it always gets a response, success or failure).
-	 */
-	private void updateModelAsync(boolean quiet)
-	{
 		if (!config.onlineSyncEnabled())
 		{
-			if (!quiet)
-			{
-				clientThread.invoke(() -> client.addChatMessage(ChatMessageType.CONSOLE, "",
-					"Aura Tracker: enable online sync first (Config → Aura Tracker).", null));
-			}
+			clientThread.invoke(() -> client.addChatMessage(ChatMessageType.CONSOLE, "",
+				"Aura Tracker: enable online sync first (Config → Aura Tracker).", null));
 			return;
 		}
 
@@ -428,15 +361,8 @@ public class AuraPlugin extends Plugin
 			Model model = localPlayer != null ? localPlayer.getModel() : null;
 			if (model == null)
 			{
-				if (quiet)
-				{
-					log.warn("Aura Tracker: initial quiet model upload skipped, player model not resolvable yet");
-				}
-				else
-				{
-					client.addChatMessage(ChatMessageType.CONSOLE, "",
-						"Aura Tracker: couldn't read your character right now, try again.", null);
-				}
+				client.addChatMessage(ChatMessageType.CONSOLE, "",
+					"Aura Tracker: couldn't read your character right now, try again.", null);
 				return;
 			}
 
@@ -448,19 +374,13 @@ public class AuraPlugin extends Plugin
 			catch (IOException | RuntimeException e)
 			{
 				log.warn("Aura Tracker: failed to export player model", e);
-				if (!quiet)
-				{
-					client.addChatMessage(ChatMessageType.CONSOLE, "",
-						"Aura Tracker: failed to export your 3D model.", null);
-				}
+				client.addChatMessage(ChatMessageType.CONSOLE, "",
+					"Aura Tracker: failed to export your 3D model.", null);
 				return;
 			}
 
 			String deviceId = tracker.getSession().getOrCreateDeviceId();
-			if (!quiet)
-			{
-				client.addChatMessage(ChatMessageType.CONSOLE, "", "Aura Tracker: updating your 3D model...", null);
-			}
+			client.addChatMessage(ChatMessageType.CONSOLE, "", "Aura Tracker: updating your 3D model...", null);
 			apiClient.syncModelAsync(deviceId, glb);
 		});
 	}
