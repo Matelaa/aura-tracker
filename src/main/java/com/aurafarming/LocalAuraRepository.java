@@ -13,20 +13,26 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.RuneLite;
 
 /**
- * Loads and saves {@link AuraSession} data as a single local JSON file under the
- * RuneLite directory. This is the ONLY form of persistence in the Phase A (local-only)
- * scope of the project — there is no network client, no remote sync, and no code path
- * in this class that ever opens a socket or makes an HTTP request.
+ * Loads and saves {@link AuraSession} data as local JSON files under the RuneLite
+ * directory, one file per RuneScape account. This is the ONLY form of persistence in the
+ * Phase A (local-only) scope of the project — there is no network client, no remote
+ * sync, and no code path in this class that ever opens a socket or makes an HTTP
+ * request.
  * <p>
- * MVP scope note: data is stored in one file per RuneLite installation, not scoped per
- * RuneScape profile. Splitting by profile is a reasonable future enhancement but is not
- * required for the MVP and was intentionally left out to keep this class simple.
+ * Scoped by {@code accountHash} ({@link net.runelite.api.Client#getAccountHash()}),
+ * not display name — the same choice RuneLite's own {@code ConfigManager} makes for
+ * per-account state, and unlike the display-name-keyed screenshot folders, it survives a
+ * character rename. Two different RuneScape accounts played on the same machine
+ * therefore never share progress, and a single account keeps its progress across a
+ * rename. {@code accountHash} is never sent anywhere by this class — see
+ * {@link AuraSession#getOrCreateDeviceId()} for the opaque identifier actually used if
+ * online sync is enabled.
  */
 @Slf4j
 public class LocalAuraRepository
 {
 	private static final String DIRECTORY_NAME = "aura-tracker";
-	private static final String FILE_NAME = "session.json";
+	private static final String SESSIONS_SUBDIRECTORY = "sessions";
 
 	/**
 	 * Sanity ceiling for a hand-edited or corrupted local file — not anti-cheat (a
@@ -39,36 +45,37 @@ public class LocalAuraRepository
 	private static final long MAX_PLAUSIBLE_ELIGIBLE_SECONDS = 100L * 365 * 24 * 60 * 60;
 
 	private final Gson gson;
-	private final File file;
+	private final File sessionsDir;
 
 	@Inject
 	public LocalAuraRepository(Gson gson)
 	{
-		this(gson, new File(new File(RuneLite.RUNELITE_DIR, DIRECTORY_NAME), FILE_NAME));
+		this(gson, new File(new File(RuneLite.RUNELITE_DIR, DIRECTORY_NAME), SESSIONS_SUBDIRECTORY));
 	}
 
 	/**
-	 * Package-private constructor allowing tests to point at a temporary file instead of
-	 * the real RuneLite directory.
+	 * Package-private constructor allowing tests to point at a temporary directory
+	 * instead of the real RuneLite directory.
 	 */
-	LocalAuraRepository(Gson gson, File file)
+	LocalAuraRepository(Gson gson, File sessionsDir)
 	{
 		this.gson = gson;
-		this.file = file;
-		File parentDir = file.getParentFile();
-		if (parentDir != null && !parentDir.exists())
+		this.sessionsDir = sessionsDir;
+		if (!sessionsDir.exists())
 		{
-			parentDir.mkdirs();
+			sessionsDir.mkdirs();
 		}
 	}
 
 	/**
-	 * Loads the persisted session, or returns a fresh, zeroed {@link AuraSession} if no
-	 * file exists yet, or if the file is missing, corrupt, or contains invalid data.
-	 * Never throws — a bad local file should never prevent the plugin from starting.
+	 * Loads the persisted session for this account, or returns a fresh, zeroed
+	 * {@link AuraSession} if no file exists yet for it, or if the file is missing,
+	 * corrupt, or contains invalid data. Never throws — a bad local file should never
+	 * prevent the plugin from starting.
 	 */
-	public AuraSession load()
+	public AuraSession load(long accountHash)
 	{
+		File file = fileFor(accountHash);
 		if (!file.exists())
 		{
 			return new AuraSession();
@@ -87,15 +94,15 @@ public class LocalAuraRepository
 	}
 
 	/**
-	 * Persists the given session to disk, overwriting any previous file. Failures are
-	 * logged, never thrown — a failed save should never crash the client or interrupt
-	 * gameplay.
+	 * Persists the given session to this account's file, overwriting any previous
+	 * version. Failures are logged, never thrown — a failed save should never crash the
+	 * client or interrupt gameplay.
 	 */
-	public void save(AuraSession session)
+	public void save(long accountHash, AuraSession session)
 	{
 		session.setLastSavedAtEpochMillis(System.currentTimeMillis());
 
-		try (Writer writer = new FileWriter(file))
+		try (Writer writer = new FileWriter(fileFor(accountHash)))
 		{
 			gson.toJson(session, writer);
 		}
@@ -103,6 +110,11 @@ public class LocalAuraRepository
 		{
 			log.warn("Aura Tracker: failed to save local session file", e);
 		}
+	}
+
+	private File fileFor(long accountHash)
+	{
+		return new File(sessionsDir, accountHash + ".json");
 	}
 
 	/**

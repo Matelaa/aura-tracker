@@ -114,6 +114,17 @@ public class AuraPlugin extends Plugin
 	private ScheduledFuture<?> onlineSyncTask;
 
 	/**
+	 * The account {@link #tracker}'s current session was loaded for, or {@code -1} for
+	 * "no real account seen yet" — the same sentinel {@link Client#getAccountHash()}
+	 * itself uses for "not logged in", so the two compare correctly with no separate
+	 * flag needed. Only ever read/written from the client thread (plugin lifecycle
+	 * methods and {@code GameStateChanged} both run there), except by {@link #persist()}
+	 * which only reads it, never calls {@code getAccountHash()} itself — see that
+	 * method's own note on why.
+	 */
+	private long loadedAccountHash = -1;
+
+	/**
 	 * Cached on the client thread every {@code GameTick} whenever the local player is
 	 * resolvable (see {@link #onGameTick}), and read from other threads by
 	 * {@link #syncOnline()}. This sidesteps two problems at once: {@code Client} methods
@@ -135,9 +146,13 @@ public class AuraPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		AuraSession loadedSession = repository.load();
-		loadedSession.resetSession();
-		tracker = new AuraSessionTracker(grandExchangeArea, new AuraTimingClock(), loadedSession);
+		// Starts empty rather than loading a file here: which account's file to load
+		// isn't known yet if the plugin starts before login (getAccountHash() is -1
+		// until then). loadSessionForCurrentAccount() below fills in the real session
+		// immediately if a player is already logged in (plugin enabled mid-session), or
+		// leaves this in place until the next LOGIN — see onGameStateChanged.
+		tracker = new AuraSessionTracker(grandExchangeArea, new AuraTimingClock(), new AuraSession());
+		loadSessionForCurrentAccount();
 
 		// The tracker always starts at LOGGED_OUT and otherwise only advances by reacting
 		// to future GameStateChanged events. If the plugin is enabled while already
@@ -231,6 +246,14 @@ public class AuraPlugin extends Plugin
 
 		GameState newState = event.getGameState();
 		tracker.onGameStateChanged(newState);
+
+		if (newState == GameState.LOGGED_IN)
+		{
+			// A no-op unless the account actually changed (see the method's own doc) —
+			// covers both "just logged in after plugin startup" and "switched to a
+			// different account without restarting the client", the same way.
+			loadSessionForCurrentAccount();
+		}
 
 		if (newState == GameState.LOGIN_SCREEN || newState == GameState.CONNECTION_LOST)
 		{
@@ -416,6 +439,38 @@ public class AuraPlugin extends Plugin
 		clientThread.invoke(() -> client.addChatMessage(ChatMessageType.CONSOLE, "", message, null));
 	}
 
+	/**
+	 * Swaps in the right account's session whenever the logged-in account differs from
+	 * whichever one {@link #tracker} currently holds — a genuine account switch, not
+	 * just a relog to the same one (that's the common case and must NOT reset the
+	 * in-memory session, matching this class's behavior before per-account scoping
+	 * existed). {@code accountHash} ({@link Client#getAccountHash()}), not display name:
+	 * survives a character rename, unlike the display-name-keyed screenshot folders
+	 * RuneLite's own screenshot plugin uses — see LocalAuraRepository's own doc for the
+	 * full reasoning. A no-op while not logged in ({@code getAccountHash() == -1}).
+	 */
+	private void loadSessionForCurrentAccount()
+	{
+		long accountHash = client.getAccountHash();
+		if (accountHash == -1 || accountHash == loadedAccountHash)
+		{
+			return;
+		}
+
+		// Flush the outgoing account's progress before switching away from it — its own
+		// LOGIN_SCREEN/logout transition already does this in the common case, but a
+		// direct account-switch-without-restart shouldn't rely on that having happened.
+		if (loadedAccountHash != -1)
+		{
+			repository.save(loadedAccountHash, tracker.getSession());
+		}
+
+		AuraSession session = repository.load(accountHash);
+		session.resetSession();
+		tracker.setSession(session);
+		loadedAccountHash = accountHash;
+	}
+
 	private void refreshPanel()
 	{
 		if (tracker == null || panel == null)
@@ -428,11 +483,16 @@ public class AuraPlugin extends Plugin
 
 	private void persist()
 	{
-		if (tracker == null)
+		// No account has been seen yet (plugin enabled before login, or between
+		// LOGIN_SCREEN and the next LOGGED_IN) — nothing meaningful to persist. Reads
+		// the cached field rather than calling client.getAccountHash() itself so this
+		// stays safe to call from the autosave executor thread, same reasoning as
+		// lastKnownDisplayName above.
+		if (tracker == null || loadedAccountHash == -1)
 		{
 			return;
 		}
 
-		repository.save(tracker.getSession());
+		repository.save(loadedAccountHash, tracker.getSession());
 	}
 }
