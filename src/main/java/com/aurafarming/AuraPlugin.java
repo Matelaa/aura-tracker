@@ -76,6 +76,14 @@ public class AuraPlugin extends Plugin
 	 */
 	private static final String DISCLOSURE_SHOWN_KEY = "syncDisclosureShown";
 
+	/**
+	 * The human-facing site (leaderboard, player pages) — a separate deployment from
+	 * {@link AuraApiClient#baseUrlForDisplay()}, which is the API host data is actually
+	 * sent to. Shown here specifically because {@code baseUrlForDisplay()} alone isn't
+	 * something a player can actually go look at.
+	 */
+	private static final String LEADERBOARD_URL = "https://aura-web-one-green.vercel.app";
+
 	@Inject
 	private Client client;
 
@@ -429,9 +437,9 @@ public class AuraPlugin extends Plugin
 		}
 		configManager.setConfiguration("aurafarming", DISCLOSURE_SHOWN_KEY, true);
 
-		String message = "Aura Tracker: your progress is being sent to "
-			+ apiClient.baseUrlForDisplay() + " (community ranking, unofficial). "
-			+ "To turn this off, see the plugin's settings.";
+		String message = "Aura Tracker: your progress is being sent to an unofficial "
+			+ "community server - check your ranking at " + LEADERBOARD_URL
+			+ ". To turn this off, see the plugin's settings.";
 
 		// addChatMessage requires the client thread; doSyncOnline() runs on either the
 		// background executor or the client thread depending on the caller (see its own
