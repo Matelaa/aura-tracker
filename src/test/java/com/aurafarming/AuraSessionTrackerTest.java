@@ -1,7 +1,6 @@
 package com.aurafarming;
 
 import net.runelite.api.GameState;
-import net.runelite.api.coords.WorldArea;
 import net.runelite.api.coords.WorldPoint;
 import org.junit.Before;
 import org.junit.Test;
@@ -27,7 +26,7 @@ public class AuraSessionTrackerTest
 	@Before
 	public void setUp()
 	{
-		GrandExchangeArea area = new GrandExchangeArea(new WorldArea(SW_X, SW_Y, 10, 10, PLANE));
+		GrandExchangeArea area = plainSquareArea();
 		fakeClock = new FakeClock(0L);
 		session = new AuraSession();
 		tracker = new AuraSessionTracker(area, new AuraTimingClock(fakeClock), session, fakeClock);
@@ -149,7 +148,7 @@ public class AuraSessionTrackerTest
 	public void loggedOutTrackerIgnoresGameTicksEntirely()
 	{
 		AuraSessionTracker freshTracker = new AuraSessionTracker(
-			new GrandExchangeArea(new WorldArea(SW_X, SW_Y, 10, 10, PLANE)),
+			plainSquareArea(),
 			new AuraTimingClock(fakeClock),
 			new AuraSession(),
 			fakeClock);
@@ -171,6 +170,17 @@ public class AuraSessionTrackerTest
 	{
 		fakeClock.advanceMillis(1000);
 		tracker.onGameTick(INSIDE_GE, IDLE_DELAY_SECONDS);
+	}
+
+	/**
+	 * A plain 10x10 square, independent of the octagon-shaped production bounds — this
+	 * test is about state-machine transitions, not the courtyard's real shape, so the
+	 * diagonal bounds are left wide enough to never cut anything within the square.
+	 */
+	private static GrandExchangeArea plainSquareArea()
+	{
+		return new GrandExchangeArea(SW_X, SW_X + 9, SW_Y, SW_Y + 9, Integer.MIN_VALUE, Integer.MAX_VALUE,
+			Integer.MIN_VALUE, Integer.MAX_VALUE, PLANE);
 	}
 
 	/**
