@@ -85,10 +85,18 @@ public class AuraApiClient
 	/**
 	 * Fire-and-forget: returns immediately, the actual request completes asynchronously.
 	 * Never throws.
+	 *
+	 * @param accountHash {@code Client#getAccountHash()}, or {@code -1} if not resolvable
+	 *                     right now — sent as a string (a {@code long} can exceed JS's
+	 *                     safe integer range) and only when known; the field is simply
+	 *                     omitted from the JSON body for {@code -1} rather than sent as a
+	 *                     sentinel, since the backend already treats a missing value and
+	 *                     an older, not-yet-updated plugin install identically.
 	 */
-	public void syncAsync(String deviceId, String displayName, long eligibleSecondsTotal)
+	public void syncAsync(String deviceId, String displayName, long eligibleSecondsTotal, long accountHash)
 	{
-		String json = gson.toJson(new SyncRequestBody(deviceId, displayName, eligibleSecondsTotal));
+		String accountHashValue = accountHash == -1 ? null : String.valueOf(accountHash);
+		String json = gson.toJson(new SyncRequestBody(deviceId, displayName, eligibleSecondsTotal, accountHashValue));
 
 		HttpRequest request;
 		try
@@ -189,16 +197,20 @@ public class AuraApiClient
 	private static final class SyncRequestBody
 	{
 		// Field names are serialized as-is by Gson — must match the backend's zod schema
-		// (aura-web/src/lib/schemas.ts) exactly: deviceId, displayName, eligibleSecondsTotal.
+		// (aura-back/src/lib/schemas.ts) exactly: deviceId, displayName,
+		// eligibleSecondsTotal, accountHash. A null accountHash is omitted from the JSON
+		// entirely (Gson's default behavior), not sent as a null/sentinel value.
 		private final String deviceId;
 		private final String displayName;
 		private final long eligibleSecondsTotal;
+		private final String accountHash;
 
-		private SyncRequestBody(String deviceId, String displayName, long eligibleSecondsTotal)
+		private SyncRequestBody(String deviceId, String displayName, long eligibleSecondsTotal, String accountHash)
 		{
 			this.deviceId = deviceId;
 			this.displayName = displayName;
 			this.eligibleSecondsTotal = eligibleSecondsTotal;
+			this.accountHash = accountHash;
 		}
 	}
 }

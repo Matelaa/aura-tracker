@@ -14,6 +14,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -79,7 +80,7 @@ public class AuraApiClientTest
 	{
 		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
 
-		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 752_400);
+		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 752_400, 123456789L);
 		awaitRequest();
 
 		assertEquals("POST", lastRequestMethod);
@@ -87,6 +88,21 @@ public class AuraApiClientTest
 		assertTrue(lastRequestBody.contains("\"deviceId\":\"a1b2c3d4-e5f6-4789-a012-3456789abcde\""));
 		assertTrue(lastRequestBody.contains("\"displayName\":\"TestSlayer42\""));
 		assertTrue(lastRequestBody.contains("\"eligibleSecondsTotal\":752400"));
+		// Sent as a string, not a bare JSON number — see syncAsync's own doc comment.
+		assertTrue(lastRequestBody.contains("\"accountHash\":\"123456789\""));
+	}
+
+	@Test
+	public void omitsAccountHashWhenNotResolvable() throws InterruptedException
+	{
+		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
+
+		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60, -1L);
+		awaitRequest();
+
+		assertTrue(lastRequestBody.contains("\"deviceId\""));
+		assertFalse("accountHash key should be missing entirely, not null: was <" + lastRequestBody + ">",
+			lastRequestBody.contains("\"accountHash\""));
 	}
 
 	@Test
@@ -96,7 +112,7 @@ public class AuraApiClientTest
 		// simulates the backend being down. Must not throw: a sync failure can never
 		// surface to the caller.
 		AuraApiClient client = new AuraApiClient(new Gson(), "http://127.0.0.1:1");
-		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60);
+		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60, -1L);
 		// If we reach this line without an exception, the guarantee held.
 	}
 
@@ -106,7 +122,7 @@ public class AuraApiClientTest
 		respondWithStatus = 429;
 		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
 
-		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60);
+		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60, -1L);
 		awaitRequest();
 		// No exception, no crash — the 429 is only ever logged (see AuraApiClient).
 	}

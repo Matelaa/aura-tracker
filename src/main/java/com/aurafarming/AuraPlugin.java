@@ -125,12 +125,14 @@ public class AuraPlugin extends Plugin
 	 * The account {@link #tracker}'s current session was loaded for, or {@code -1} for
 	 * "no real account seen yet" — the same sentinel {@link Client#getAccountHash()}
 	 * itself uses for "not logged in", so the two compare correctly with no separate
-	 * flag needed. Only ever read/written from the client thread (plugin lifecycle
-	 * methods and {@code GameStateChanged} both run there), except by {@link #persist()}
-	 * which only reads it, never calls {@code getAccountHash()} itself — see that
-	 * method's own note on why.
+	 * flag needed. Written only from the client thread (plugin lifecycle methods and
+	 * {@code GameStateChanged} both run there); read from there and also, without ever
+	 * calling {@code getAccountHash()} itself, by {@link #persist()} and
+	 * {@link #doSyncOnline()} — both of which also run on the autosave/online-sync
+	 * executor thread. {@code volatile} for that cross-thread visibility, same reason
+	 * {@link #lastKnownDisplayName} already is.
 	 */
-	private long loadedAccountHash = -1;
+	private volatile long loadedAccountHash = -1;
 
 	/**
 	 * Cached on the client thread every {@code GameTick} whenever the local player is
@@ -366,7 +368,7 @@ public class AuraPlugin extends Plugin
 		String deviceId = session.getOrCreateDeviceId();
 		long eligibleSeconds = session.getEligibleAuraDurationSeconds();
 
-		apiClient.syncAsync(deviceId, displayName, eligibleSeconds);
+		apiClient.syncAsync(deviceId, displayName, eligibleSeconds, loadedAccountHash);
 		executor.execute(this::persist);
 	}
 
