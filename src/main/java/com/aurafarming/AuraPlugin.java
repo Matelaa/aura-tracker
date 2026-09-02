@@ -27,6 +27,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.LinkBrowser;
 
 /**
  * Aura Tracker — a purely cosmetic tracker for time spent standing still in the Grand
@@ -172,7 +173,7 @@ public class AuraPlugin extends Plugin
 		// plugin always starts before login.
 		tracker.onGameStateChanged(client.getGameState());
 
-		panel = new AuraPanel(scoreCalculator, this::updateModelAsync);
+		panel = new AuraPanel(scoreCalculator, this::openLeaderboard, this::updateModelAsync);
 
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "aura_icon.png");
 		navButton = NavigationButton.builder()
@@ -370,6 +371,17 @@ public class AuraPlugin extends Plugin
 
 		apiClient.syncAsync(deviceId, displayName, eligibleSeconds, loadedAccountHash);
 		executor.execute(this::persist);
+	}
+
+	/**
+	 * Opens the community leaderboard in the player's default browser — the panel's
+	 * "Open Leaderboard" button is the only trigger. Otherwise, the link only ever
+	 * appears once, in the one-time sync disclosure chat message, which is easy to
+	 * miss entirely.
+	 */
+	private void openLeaderboard()
+	{
+		LinkBrowser.browse(LEADERBOARD_URL);
 	}
 
 	/**

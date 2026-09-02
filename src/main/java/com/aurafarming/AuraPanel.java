@@ -70,6 +70,10 @@ public class AuraPanel extends PluginPanel
 	private final List<JPanel> statCards = new ArrayList<>();
 
 	/**
+	 * @param onOpenLeaderboardClicked invoked when the user clicks "Open Leaderboard" —
+	 *                                 most players never see the leaderboard link
+	 *                                 otherwise, since it only ever appears once, in the
+	 *                                 one-time sync disclosure chat message.
 	 * @param onUpdateModelClicked invoked when the user clicks the "Update 3D Model"
 	 *                             button — a deliberate, user-initiated action (same UX
 	 *                             as RuneProfile's own "Update Player Model" button),
@@ -78,7 +82,7 @@ public class AuraPanel extends PluginPanel
 	 *                             keeping it purely presentational like the rest of this
 	 *                             class.
 	 */
-	public AuraPanel(AuraScoreCalculator scoreCalculator, Runnable onUpdateModelClicked)
+	public AuraPanel(AuraScoreCalculator scoreCalculator, Runnable onOpenLeaderboardClicked, Runnable onUpdateModelClicked)
 	{
 		super(false);
 		this.scoreCalculator = scoreCalculator;
@@ -101,7 +105,9 @@ public class AuraPanel extends PluginPanel
 		content.add(verticalGap());
 		content.add(addCard(statCard("STATUS", stateValueLabel, false)));
 		content.add(Box.createRigidArea(new Dimension(0, 18)));
-		content.add(buildUpdateModelButton(onUpdateModelClicked));
+		content.add(buildButton("Open Leaderboard", onOpenLeaderboardClicked));
+		content.add(verticalGap());
+		content.add(buildButton("Update 3D Model", onUpdateModelClicked));
 
 		add(content, BorderLayout.NORTH);
 
@@ -188,9 +194,9 @@ public class AuraPanel extends PluginPanel
 		return card;
 	}
 
-	private static JButton buildUpdateModelButton(Runnable onClick)
+	private static JButton buildButton(String label, Runnable onClick)
 	{
-		JButton button = new JButton("Update 3D Model");
+		JButton button = new JButton(label);
 		button.setFont(FontManager.getRunescapeSmallFont());
 		button.setFocusPainted(false);
 		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
