@@ -30,7 +30,7 @@ auraPoints = eligibleSecondsElapsed / 60
 </tr>
 </table>
 
-Leaderboard/player screenshots show synthetic demo data, not a real player's account.
+The leaderboard screenshot is the real, live production ranking; the player page still shows synthetic demo data, not a real player's account.
 
 ## Data and privacy
 
