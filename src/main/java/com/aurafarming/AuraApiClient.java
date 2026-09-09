@@ -7,6 +7,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +39,12 @@ public class AuraApiClient
 	private final HttpClient httpClient;
 	private final Gson gson;
 	private final String baseUrl;
+	private final LongSupplier nanoTime;
+	private final ConcurrentHashMap<String, Long> retryAfter = new ConcurrentHashMap<>();
+	private final java.util.Set<String> inFlight = ConcurrentHashMap.newKeySet();
+	// Plugin Hub's standard build replaces build.gradle; do not rely on generated resources.
+	// AuraApiClientTest checks this against runelite-plugin.properties on every test run.
+	static final String CLIENT_VERSION = "1.4";
 
 	/**
 	 * Always takes RuneLite's own injected {@link Gson} instance rather than
@@ -56,9 +64,7 @@ public class AuraApiClient
 	 */
 	AuraApiClient(Gson gson, String baseUrl)
 	{
-		this.baseUrl = baseUrl;
-		this.gson = gson;
-		this.httpClient = HttpClient.newBuilder()
+		this(gson, baseUrl, HttpClient.newBuilder()
 			.connectTimeout(REQUEST_TIMEOUT)
 			// HttpClient defaults to preferring HTTP/2 even over plain (non-TLS) HTTP,
 			// which negotiates via an h2c upgrade handshake. Node's dev server (and
@@ -69,7 +75,15 @@ public class AuraApiClient
 			// exact failure locally and confirmed forcing HTTP/1.1 fixes it before
 			// applying this change.
 			.version(HttpClient.Version.HTTP_1_1)
-			.build();
+			.build(), System::nanoTime);
+	}
+
+	AuraApiClient(Gson gson, String baseUrl, HttpClient httpClient, LongSupplier nanoTime)
+	{
+		this.baseUrl = baseUrl;
+		this.gson = gson;
+		this.httpClient = httpClient;
+		this.nanoTime = nanoTime;
 	}
 
 	/**
@@ -95,17 +109,29 @@ public class AuraApiClient
 	 */
 	public void syncAsync(String deviceId, String displayName, long eligibleSecondsTotal, long accountHash)
 	{
-		String accountHashValue = accountHash == -1 ? null : String.valueOf(accountHash);
-		String json = gson.toJson(new SyncRequestBody(deviceId, displayName, eligibleSecondsTotal, accountHashValue));
+		if (deviceId == null || !inFlight.add(deviceId))
+		{
+			return;
+		}
+		// Acquire the slot first: another response could set a cooldown between checking
+		// it and acquiring the slot. Recheck while this call owns the device slot.
+		if (!canSync(deviceId))
+		{
+			inFlight.remove(deviceId);
+			return;
+		}
 
 		HttpRequest request;
 		try
 		{
+			String accountHashValue = accountHash == -1 ? null : String.valueOf(accountHash);
+			String json = gson.toJson(new SyncRequestBody(deviceId, displayName, eligibleSecondsTotal, accountHashValue));
 			request = HttpRequest.newBuilder()
 				.uri(URI.create(baseUrl + "/api/sync"))
 				.version(HttpClient.Version.HTTP_1_1)
 				.timeout(REQUEST_TIMEOUT)
 				.header("Content-Type", "application/json")
+				.header("X-Aura-Client-Version", CLIENT_VERSION)
 				.POST(HttpRequest.BodyPublishers.ofString(json))
 				.build();
 		}
@@ -114,35 +140,92 @@ public class AuraApiClient
 			// Malformed baseUrl, etc. — should never happen with a hardcoded/validated
 			// URL, but a sync must never throw regardless of the reason.
 			log.warn("Aura Tracker: could not build sync request", e);
+			inFlight.remove(deviceId);
 			return;
 		}
 
 		log.info("Aura Tracker: sending online sync to {}", request.uri());
 
-		httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-			.orTimeout(REQUEST_TIMEOUT.toSeconds() + 2, TimeUnit.SECONDS)
-			.whenComplete((response, error) ->
+		try
+		{
+			httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+				.orTimeout(REQUEST_TIMEOUT.toSeconds() + 2, TimeUnit.SECONDS)
+				.whenComplete((response, error) ->
+				{
+					try { handleSyncResponse(deviceId, response, error); }
+					finally { inFlight.remove(deviceId); }
+				});
+		}
+		catch (RuntimeException error)
+		{
+			inFlight.remove(deviceId);
+			log.warn("Aura Tracker: could not send sync request", error);
+		}
+	}
+
+	private void handleSyncResponse(String deviceId, HttpResponse<String> response, Throwable error)
+	{
+		if (error != null)
+		{
+			log.warn("Aura Tracker: online sync failed, will retry next cycle", error);
+			return;
+		}
+		String requestId = response.headers().firstValue("X-Request-Id").orElse("unknown");
+		if (response.statusCode() == 200)
+		{
+			SyncReply reply = parseSyncReply(response.body());
+			if (reply != null && Boolean.TRUE.equals(reply.accepted))
 			{
-				if (error != null)
-				{
-					// warn, not debug: this is exactly the kind of failure that must be
-					// visible in the default log output, not silently invisible — it was
-					// invisible at debug level during this feature's own development,
-					// which made an earlier real bug much harder to diagnose than it
-					// needed to be.
-					log.warn("Aura Tracker: online sync failed, will retry next cycle", error);
-					return;
-				}
-				if (response.statusCode() == 200)
-				{
-					log.info("Aura Tracker: online sync accepted, response={}", response.body());
-				}
-				else
-				{
-					log.warn("Aura Tracker: online sync rejected by server, status={}, body={}",
-						response.statusCode(), response.body());
-				}
-			});
+				log.info("Aura Tracker: sync accepted, server seconds={}, requestId={}", reply.totalEligibleSeconds, requestId);
+			}
+			else
+			{
+				String reason = reply == null ? "invalid_response" : reply.rejectionReason;
+				log.warn("Aura Tracker: sync not accepted in full, reason={}, requestId={}", reason, requestId);
+			}
+		}
+		else
+		{
+			if (response.statusCode() == 429)
+			{
+				deferSync(deviceId, response.headers().firstValue("Retry-After").orElse("240"));
+			}
+			log.warn("Aura Tracker: online sync rejected, status={}, requestId={}", response.statusCode(), requestId);
+		}
+	}
+
+	boolean canSync(String deviceId)
+	{
+		Long deadline = retryAfter.get(deviceId);
+		if (deadline == null) return true;
+		if (nanoTime.getAsLong() - deadline < 0) return false;
+		retryAfter.remove(deviceId, deadline);
+		return true;
+	}
+
+	void deferSync(String deviceId, String secondsHeader)
+	{
+		long seconds = 240;
+		try { seconds = Math.max(1, Math.min(3600, Long.parseLong(secondsHeader))); }
+		catch (NumberFormatException ignored) { /* Use the server's standard sync window. */ }
+		retryAfter.put(deviceId, nanoTime.getAsLong() + TimeUnit.SECONDS.toNanos(seconds));
+	}
+
+	SyncReply parseSyncReply(String body)
+	{
+		try
+		{
+			SyncReply reply = gson.fromJson(body, SyncReply.class);
+			return reply != null && reply.accepted != null ? reply : null;
+		}
+		catch (RuntimeException ignored) { return null; }
+	}
+
+	static final class SyncReply
+	{
+		Boolean accepted;
+		String rejectionReason;
+		long totalEligibleSeconds;
 	}
 
 	/**
@@ -162,6 +245,7 @@ public class AuraApiClient
 				.version(HttpClient.Version.HTTP_1_1)
 				.timeout(REQUEST_TIMEOUT)
 				.header("Content-Type", "model/gltf-binary")
+				.header("X-Aura-Client-Version", CLIENT_VERSION)
 				.POST(HttpRequest.BodyPublishers.ofByteArray(glb))
 				.build();
 		}
