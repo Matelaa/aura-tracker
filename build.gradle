@@ -25,7 +25,9 @@ dependencies {
 sourceCompatibility = JavaVersion.VERSION_11
 targetCompatibility = JavaVersion.VERSION_11
 group = 'com.aurafarming'
-version = '1.0.0'
+def pluginProperties = new Properties()
+file('runelite-plugin.properties').withInputStream { pluginProperties.load(it) }
+version = pluginProperties.getProperty('version')
 
 test {
     useJUnit()

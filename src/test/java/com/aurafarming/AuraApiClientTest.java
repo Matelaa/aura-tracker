@@ -29,6 +29,7 @@ public class AuraApiClientTest
 	private volatile String lastRequestBody;
 	private volatile String lastRequestMethod;
 	private volatile String lastContentType;
+	private volatile String lastClientVersion;
 	private CountDownLatch requestReceived;
 	private int respondWithStatus = 200;
 
@@ -51,6 +52,7 @@ public class AuraApiClientTest
 	{
 		lastRequestMethod = exchange.getRequestMethod();
 		lastContentType = exchange.getRequestHeaders().getFirst("Content-Type");
+		lastClientVersion = exchange.getRequestHeaders().getFirst("X-Aura-Client-Version");
 		lastRequestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
 		byte[] response = "{\"accepted\":true,\"totalEligibleSeconds\":0,\"auraPoints\":0}".getBytes(StandardCharsets.UTF_8);
@@ -76,7 +78,7 @@ public class AuraApiClientTest
 	}
 
 	@Test
-	public void sendsExpectedRequestShape() throws InterruptedException
+	public void sendsExpectedRequestShape() throws InterruptedException, IOException
 	{
 		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
 
@@ -85,6 +87,13 @@ public class AuraApiClientTest
 
 		assertEquals("POST", lastRequestMethod);
 		assertEquals("application/json", lastContentType);
+		assertEquals(AuraApiClient.CLIENT_VERSION, lastClientVersion);
+		java.util.Properties metadata = new java.util.Properties();
+		try (java.io.InputStream stream = new java.io.FileInputStream("runelite-plugin.properties"))
+		{
+			metadata.load(stream);
+		}
+		assertEquals("Client version must match Plugin Hub metadata", metadata.getProperty("version"), lastClientVersion);
 		assertTrue(lastRequestBody.contains("\"deviceId\":\"a1b2c3d4-e5f6-4789-a012-3456789abcde\""));
 		assertTrue(lastRequestBody.contains("\"displayName\":\"TestSlayer42\""));
 		assertTrue(lastRequestBody.contains("\"eligibleSecondsTotal\":752400"));
@@ -125,5 +134,28 @@ public class AuraApiClientTest
 		client.syncAsync("a1b2c3d4-e5f6-4789-a012-3456789abcde", "TestSlayer42", 60, -1L);
 		awaitRequest();
 		// No exception, no crash — the 429 is only ever logged (see AuraApiClient).
+	}
+
+	@Test
+	public void distinguishesBusinessRejectionFromHttpSuccess()
+	{
+		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
+		AuraApiClient.SyncReply reply = client.parseSyncReply("{\"accepted\":false,\"rejectionReason\":\"regression\",\"totalEligibleSeconds\":1000}");
+		assertFalse(reply.accepted);
+		assertEquals("regression", reply.rejectionReason);
+		assertEquals(1000, reply.totalEligibleSeconds);
+		assertEquals(null, client.parseSyncReply("<html>error</html>"));
+		assertEquals(null, client.parseSyncReply("{}"));
+	}
+
+	@Test
+	public void cooldownIsScopedToTheRejectedDevice()
+	{
+		AuraApiClient client = new AuraApiClient(new Gson(), baseUrl());
+		client.deferSync("device-one", "120");
+		assertFalse(client.canSync("device-one"));
+		assertTrue(client.canSync("device-two"));
+		client.deferSync("device-two", "invalid");
+		assertFalse(client.canSync("device-two"));
 	}
 }
