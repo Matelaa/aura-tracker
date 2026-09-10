@@ -1,0 +1,52 @@
+name: Announce plugin updates
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish commit summary to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+          if not webhook:
+              raise SystemExit("DISCORD_ANNOUNCEMENTS_WEBHOOK secret is not configured")
+          message = os.environ.get("COMMIT_MESSAGE", "").strip().splitlines()[0]
+          payload = {
+              "username": "Aura Tracker Updates",
+              "embeds": [{
+                  "title": "Aura Tracker update",
+                  "description": message or "New commit pushed.",
+                  "url": os.environ["COMMIT_URL"],
+                  "color": 16750592,
+                  "fields": [
+                      {"name": "Repository", "value": os.environ["REPOSITORY"], "inline": True},
+                      {"name": "Author", "value": os.environ.get("COMMIT_AUTHOR", "Unknown"), "inline": True},
+                      {"name": "Commit", "value": os.environ["COMMIT_SHA"][:7], "inline": True},
+                  ]
+              }]
+          }
+          request = urllib.request.Request(
+              webhook,
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json", "User-Agent": "Aura-Tracker-GitHub-Action"},
+              method="POST",
+          )
+          with urllib.request.urlopen(request) as response:
+              if response.status >= 300:
+                  raise SystemExit(f"Discord webhook returned HTTP {response.status}")
+          PY
