@@ -82,7 +82,7 @@ public class AuraPanel extends PluginPanel
 	 *                             keeping it purely presentational like the rest of this
 	 *                             class.
 	 */
-	public AuraPanel(AuraScoreCalculator scoreCalculator, Runnable onOpenLeaderboardClicked, Runnable onUpdateModelClicked)
+	public AuraPanel(AuraScoreCalculator scoreCalculator, Runnable onOpenLeaderboardClicked, Runnable onOpenDiscordClicked, Runnable onUpdateModelClicked)
 	{
 		super(false);
 		this.scoreCalculator = scoreCalculator;
@@ -106,6 +106,8 @@ public class AuraPanel extends PluginPanel
 		content.add(addCard(statCard("STATUS", stateValueLabel, false)));
 		content.add(Box.createRigidArea(new Dimension(0, 18)));
 		content.add(buildButton("Open Leaderboard", onOpenLeaderboardClicked));
+		content.add(verticalGap());
+		content.add(buildButton("Join Discord Community", onOpenDiscordClicked));
 		content.add(verticalGap());
 		content.add(buildButton("Update 3D Model", onUpdateModelClicked));
 

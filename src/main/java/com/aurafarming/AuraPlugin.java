@@ -84,6 +84,7 @@ public class AuraPlugin extends Plugin
 	 * something a player can actually go look at.
 	 */
 	private static final String LEADERBOARD_URL = "https://aura-web-one-green.vercel.app";
+	private static final String DISCORD_URL = "https://discord.gg/55N6tCfUcm";
 
 	@Inject
 	private Client client;
@@ -173,7 +174,7 @@ public class AuraPlugin extends Plugin
 		// plugin always starts before login.
 		tracker.onGameStateChanged(client.getGameState());
 
-		panel = new AuraPanel(scoreCalculator, this::openLeaderboard, this::updateModelAsync);
+		panel = new AuraPanel(scoreCalculator, this::openLeaderboard, this::openDiscord, this::updateModelAsync);
 
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "aura_icon.png");
 		navButton = NavigationButton.builder()
@@ -382,6 +383,11 @@ public class AuraPlugin extends Plugin
 	private void openLeaderboard()
 	{
 		LinkBrowser.browse(LEADERBOARD_URL);
+	}
+
+	private void openDiscord()
+	{
+		LinkBrowser.browse(DISCORD_URL);
 	}
 
 	/**
