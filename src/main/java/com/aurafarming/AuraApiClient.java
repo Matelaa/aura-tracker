@@ -44,7 +44,7 @@ public class AuraApiClient
 	private final java.util.Set<String> inFlight = ConcurrentHashMap.newKeySet();
 	// Plugin Hub's standard build replaces build.gradle; do not rely on generated resources.
 	// AuraApiClientTest checks this against runelite-plugin.properties on every test run.
-	static final String CLIENT_VERSION = "1.4";
+	static final String CLIENT_VERSION = "1.5";
 
 	/**
 	 * Always takes RuneLite's own injected {@link Gson} instance rather than
