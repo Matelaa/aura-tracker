@@ -78,6 +78,30 @@ public class AuraPlugin extends Plugin
 	private static final String DISCLOSURE_SHOWN_KEY = "syncDisclosureShown";
 
 	/**
+	 * How many consecutive online syncs must report a zero all-time total before the
+	 * "still 0 Aura" chat nudge is ever allowed to fire — see
+	 * {@link #maybeShowZeroAuraNotice(AuraSession)}. At
+	 * {@link #ONLINE_SYNC_INTERVAL_MINUTES}, 5 is well over an hour of continued play;
+	 * deliberately not 1, so a brand-new install is never nagged on its very first
+	 * sync, when everyone is still at zero. Only gates the *first* time ever — once a
+	 * player has proven to be a genuine slow-progress case (not a fresh install), later
+	 * sessions don't need to wait through this again; see
+	 * {@link #zeroAuraNoticeShownThisSession}.
+	 */
+	private static final int ZERO_AURA_NOTICE_THRESHOLD = 5;
+
+	/**
+	 * Hidden config key (same pattern as {@link #DISCLOSURE_SHOWN_KEY}) recording that
+	 * this account has cleared {@link #ZERO_AURA_NOTICE_THRESHOLD} at least once ever.
+	 * Persisted forever and never cleared — its only job is to skip re-waiting through
+	 * the threshold in later sessions, since a player who already proved they're a real
+	 * slow-progress case (not a fresh install still warming up) doesn't need to prove
+	 * it again. Session-to-session repetition itself is controlled separately by
+	 * {@link #zeroAuraNoticeShownThisSession}, which is deliberately NOT persisted.
+	 */
+	private static final String ZERO_AURA_THRESHOLD_CLEARED_KEY = "zeroAuraThresholdCleared";
+
+	/**
 	 * The human-facing site (leaderboard, player pages) — a separate deployment from
 	 * {@link AuraApiClient#baseUrlForDisplay()}, which is the API host data is actually
 	 * sent to. Shown here specifically because {@code baseUrlForDisplay()} alone isn't
@@ -115,6 +139,18 @@ public class AuraPlugin extends Plugin
 
 	private final GrandExchangeArea grandExchangeArea = new GrandExchangeArea();
 	private final AuraScoreCalculator scoreCalculator = new AuraScoreCalculator();
+
+	/**
+	 * Deliberately a plain field, not a {@link #configManager} value — mirrors how the
+	 * DropTracker RuneLite plugin's own {@code loginWarningsShown} field gates its
+	 * once-per-login warnings (checked directly against that plugin's public source).
+	 * A fresh {@code AuraPlugin} instance is created each time the plugin starts
+	 * (client launch, or the plugin being re-enabled), so this naturally resets then —
+	 * no explicit reset logic needed. Only meaningful once
+	 * {@link #ZERO_AURA_THRESHOLD_CLEARED_KEY} is set; see
+	 * {@link #maybeShowZeroAuraNotice(AuraSession)}.
+	 */
+	private boolean zeroAuraNoticeShownThisSession;
 
 	private AuraSessionTracker tracker;
 	private AuraPanel panel;
@@ -370,8 +406,68 @@ public class AuraPlugin extends Plugin
 		String deviceId = session.getOrCreateDeviceId();
 		long eligibleSeconds = session.getEligibleAuraDurationSeconds();
 
+		if (eligibleSeconds == 0)
+		{
+			session.recordZeroAuraSync();
+			maybeShowZeroAuraNotice(session);
+		}
+
 		apiClient.syncAsync(deviceId, displayName, eligibleSeconds, loadedAccountHash);
 		executor.execute(this::persist);
+	}
+
+	/**
+	 * Chat nudge for players who keep syncing but have never earned any Aura — fires
+	 * at most once per plugin session (see {@link #zeroAuraNoticeShownThisSession}),
+	 * same cadence DropTracker's own {@code loginWarningsShown} uses for its login
+	 * warnings. The first time ever still waits for a real streak of unproductive
+	 * syncs (see {@link #ZERO_AURA_NOTICE_THRESHOLD}'s doc), so a fresh install is
+	 * never nagged in its very first minutes; every later session — once that's been
+	 * proven — nudges again immediately on the first zero-Aura sync, without waiting
+	 * through the streak a second time.
+	 * <p>
+	 * Deliberately chat-only wording duplicated from {@link AuraPanel}'s own
+	 * always-visible (while at zero) notice rather than one triggering the other — the
+	 * panel reflects live state on every refresh, while this fires at most once per
+	 * session, so tying them together would either spam the panel's redraw path or
+	 * make this method's once-per-session nature depend on Swing repaint timing.
+	 */
+	private void maybeShowZeroAuraNotice(AuraSession session)
+	{
+		if (zeroAuraNoticeShownThisSession)
+		{
+			return;
+		}
+
+		boolean thresholdAlreadyCleared = "true".equals(configManager.getConfiguration("aurafarming", ZERO_AURA_THRESHOLD_CLEARED_KEY));
+		if (!shouldShowZeroAuraNotice(thresholdAlreadyCleared, session.getZeroAuraSyncStreak(), ZERO_AURA_NOTICE_THRESHOLD))
+		{
+			return;
+		}
+
+		if (!thresholdAlreadyCleared)
+		{
+			configManager.setConfiguration("aurafarming", ZERO_AURA_THRESHOLD_CLEARED_KEY, true);
+		}
+
+		zeroAuraNoticeShownThisSession = true;
+		clientThread.invoke(() -> client.addChatMessage(ChatMessageType.CONSOLE, "",
+			"Aura Tracker: you haven't earned any Aura yet - still 0 on the leaderboard. Stand still at the Grand Exchange to start earning.", null));
+	}
+
+	/**
+	 * Pure decision logic pulled out of {@link #maybeShowZeroAuraNotice(AuraSession)}
+	 * specifically so it's testable without mocking {@code Client}/{@code
+	 * ConfigManager}/{@code ClientThread} — same reasoning as why
+	 * {@link AuraSessionTracker}'s state machine takes a plain {@code WorldPoint}
+	 * instead of touching {@code Client} itself. Callers have already ruled out
+	 * "already shown this session" before calling this — that part is deliberately
+	 * left out here since it depends on this plugin instance's own field, not on any
+	 * of these three inputs.
+	 */
+	static boolean shouldShowZeroAuraNotice(boolean thresholdAlreadyCleared, int zeroAuraSyncStreak, int threshold)
+	{
+		return thresholdAlreadyCleared || zeroAuraSyncStreak >= threshold;
 	}
 
 	/**

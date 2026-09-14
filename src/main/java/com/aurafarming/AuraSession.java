@@ -41,6 +41,17 @@ public class AuraSession
 	 */
 	private String deviceId;
 
+	/**
+	 * Consecutive online syncs sent with {@link #eligibleAuraDurationSeconds} still at
+	 * zero. Used only to gate the one-time "you haven't earned any Aura yet" chat
+	 * message (see {@code AuraPlugin#doSyncOnline}) so it never fires on a fresh
+	 * install's very first sync — only after a real stretch of continued, unproductive
+	 * play. Never decremented: once the total becomes positive it stays positive
+	 * forever (see {@link #addEligibleSeconds}), so the streak becoming irrelevant
+	 * needs no explicit reset.
+	 */
+	private int zeroAuraSyncStreak;
+
 	public AuraSession()
 	{
 		// Default constructor for Gson deserialization.
@@ -78,6 +89,17 @@ public class AuraSession
 	public long getLastSavedAtEpochMillis()
 	{
 		return lastSavedAtEpochMillis;
+	}
+
+	public int getZeroAuraSyncStreak()
+	{
+		return zeroAuraSyncStreak;
+	}
+
+	/** Called once per online sync attempt while the all-time total is still zero. */
+	public void recordZeroAuraSync()
+	{
+		zeroAuraSyncStreak++;
 	}
 
 	public void setLastSavedAtEpochMillis(long lastSavedAtEpochMillis)

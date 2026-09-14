@@ -16,6 +16,7 @@ import javax.swing.SwingConstants;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
+import javax.swing.border.MatteBorder;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -53,6 +54,17 @@ public class AuraPanel extends PluginPanel
 	private final JLabel totalTimeValueLabel = new JLabel();
 	private final JLabel sessionTimeValueLabel = new JLabel();
 	private final JLabel stateValueLabel = new JLabel();
+
+	/**
+	 * Ambient reminder, visible only while the all-time total is still zero — never a
+	 * one-off popup. Disappears for good the moment the player earns any Aura at all
+	 * (there's no path back to zero, so no logic ever needs to re-show it). Distinct
+	 * from {@code AuraPlugin}'s one-time chat nudge: that one waits for a streak of
+	 * unproductive syncs before firing once; this one reflects live state on every
+	 * {@link #update} call, with no delay and no memory of whether it's been "shown"
+	 * before.
+	 */
+	private final JPanel zeroAuraNotice = buildZeroAuraNotice();
 
 	/**
 	 * Every card built by {@link #statCard}, kept around so the constructor can freeze
@@ -105,6 +117,7 @@ public class AuraPanel extends PluginPanel
 		content.add(verticalGap());
 		content.add(addCard(statCard("STATUS", stateValueLabel, false)));
 		content.add(Box.createRigidArea(new Dimension(0, 18)));
+		content.add(zeroAuraNotice);
 		content.add(buildButton("Open Leaderboard", onOpenLeaderboardClicked));
 		content.add(verticalGap());
 		content.add(buildButton("Join Discord Community", onOpenDiscordClicked));
@@ -196,6 +209,38 @@ public class AuraPanel extends PluginPanel
 		return card;
 	}
 
+	/**
+	 * Bottom margin (18px) is baked into this panel's own border rather than added as
+	 * a separate {@code Box.createRigidArea} after it, so hiding it via
+	 * {@code setVisible(false)} in {@link #update} removes its trailing gap too —
+	 * {@link BoxLayout} skips invisible children entirely, so no leftover empty space
+	 * is left between the STATUS card and the buttons below when the player already
+	 * has Aura.
+	 */
+	private static JPanel buildZeroAuraNotice()
+	{
+		JPanel notice = new JPanel();
+		notice.setLayout(new BoxLayout(notice, BoxLayout.Y_AXIS));
+		notice.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		notice.setBorder(new CompoundBorder(
+			new MatteBorder(0, 3, 0, 0, ColorScheme.BRAND_ORANGE),
+			new EmptyBorder(8, 10, 18, 10)));
+		notice.setAlignmentX(LEFT_ALIGNMENT);
+
+		JLabel text = new JLabel("<html>You haven't earned any Aura yet &mdash; still 0 on the leaderboard.</html>");
+		text.setFont(FontManager.getRunescapeSmallFont());
+		text.setForeground(ColorScheme.BRAND_ORANGE);
+		text.setAlignmentX(LEFT_ALIGNMENT);
+
+		notice.add(text);
+		// The label's text never changes post-construction (unlike the stat cards'
+		// value labels), so its preferred size is already final here — no need to
+		// defer freezing the height until after a real update() call the way
+		// statCard's height-freezing loop in the constructor has to.
+		notice.setMaximumSize(new Dimension(Integer.MAX_VALUE, notice.getPreferredSize().height));
+		return notice;
+	}
+
 	private static JButton buildButton(String label, Runnable onClick)
 	{
 		JButton button = new JButton(label);
@@ -216,14 +261,24 @@ public class AuraPanel extends PluginPanel
 	 */
 	public void update(AuraSession session, AuraState state)
 	{
-		long auraPoints = scoreCalculator.toAuraPoints(session.getEligibleAuraDurationSeconds());
+		long totalEligibleSeconds = session.getEligibleAuraDurationSeconds();
+
+		long auraPoints = scoreCalculator.toAuraPoints(totalEligibleSeconds);
 		auraValueLabel.setText(formatNumber(auraPoints));
 
-		totalTimeValueLabel.setText(formatDuration(session.getEligibleAuraDurationSeconds()));
+		totalTimeValueLabel.setText(formatDuration(totalEligibleSeconds));
 
 		sessionTimeValueLabel.setText(formatDuration(session.getCurrentSessionEligibleSeconds()));
 
 		stateValueLabel.setText(describeState(state));
+
+		boolean showZeroAuraNotice = totalEligibleSeconds == 0;
+		if (zeroAuraNotice.isVisible() != showZeroAuraNotice)
+		{
+			zeroAuraNotice.setVisible(showZeroAuraNotice);
+			revalidate();
+			repaint();
+		}
 	}
 
 	private static String describeState(AuraState state)
